@@ -4,7 +4,7 @@ mod world;
 
 use bevy::prelude::*;
 use crate::player::{Player, PlayerPlugin};
-use crate::world::{WorldPlugin, HEIGHT, TILE_SIZE, WIDTH};
+use crate::world::{WorldPlugin, HEIGHT, WORLD_TILE_SIZE, WIDTH};
 
 fn main() {
 	App::new()
@@ -20,8 +20,8 @@ fn main() {
 struct MainCamera;
 
 fn setup(mut commands: Commands) {
-	let center_x = (WIDTH as f32 / 2.0).floor() * TILE_SIZE;
-	let center_y = (HEIGHT as f32 / 2.0).floor() * TILE_SIZE;
+	let center_x = (WIDTH as f32 / 2.0).floor() * WORLD_TILE_SIZE;
+	let center_y = (HEIGHT as f32 / 2.0).floor() * WORLD_TILE_SIZE;
 	commands.spawn((
 		Camera2d,
 		MainCamera,

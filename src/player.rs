@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::world::{HEIGHT, TILE_SIZE, WIDTH};
+use crate::world::{HEIGHT, PLAYER_SIZE, WIDTH, WORLD_TILE_SIZE};
 const MOVE_SPEED: f32 = 140.0;
 const ATLAS_COLUMNS: u32 = 8;
 
@@ -31,7 +31,7 @@ fn spawn_player(
 ) {
     let texture: Handle<Image> = asset_server.load("player.ppm");
     let layout = TextureAtlasLayout::from_grid(
-        UVec2::new(TILE_SIZE as u32, TILE_SIZE as u32),
+        UVec2::new(PLAYER_SIZE as u32, PLAYER_SIZE as u32),
         ATLAS_COLUMNS,
         1,
         None,
@@ -41,8 +41,8 @@ fn spawn_player(
 
     let facing = Facing::Down;
 
-    let center_x = (WIDTH as f32 / 2.0).floor() * TILE_SIZE;
-    let center_y = (HEIGHT as f32 / 2.0).floor() * TILE_SIZE;
+    let center_x = (WIDTH as f32 / 2.0).floor() * WORLD_TILE_SIZE;
+    let center_y = (HEIGHT as f32 / 2.0).floor() * WORLD_TILE_SIZE;
 
     commands.spawn((
         Sprite::from_atlas_image(
@@ -111,10 +111,10 @@ fn move_player(
         atlas.index = facing_index(state.facing);
     }
 
-    let min_x = TILE_SIZE;
-    let max_x = (WIDTH as f32 - 2.0) * TILE_SIZE;
-    let min_y = TILE_SIZE;
-    let max_y = (HEIGHT as f32 - 2.0) * TILE_SIZE;
+    let min_x = WORLD_TILE_SIZE;
+    let max_x = (WIDTH as f32 - 2.0) * WORLD_TILE_SIZE;
+    let min_y = WORLD_TILE_SIZE;
+    let max_y = (HEIGHT as f32 - 2.0) * WORLD_TILE_SIZE;
 
     transform.translation.x = transform.translation.x.clamp(min_x, max_x);
     transform.translation.y = transform.translation.y.clamp(min_y, max_y);
