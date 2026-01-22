@@ -1,9 +1,11 @@
 // Replace your main.rs with the following code.
 mod player;
+mod light;
 mod world;
 
 use bevy::prelude::*;
 use crate::player::{Player, PlayerPlugin};
+use crate::light::LightPlugin;
 use crate::world::{WorldPlugin, HEIGHT, WORLD_TILE_SIZE, WIDTH};
 
 fn main() {
@@ -13,6 +15,7 @@ fn main() {
 	.add_systems(Update, follow_player_camera)
     .add_plugins(PlayerPlugin)
     .add_plugins(WorldPlugin)
+    .add_plugins(LightPlugin)
 	.run();
 }
 
