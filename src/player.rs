@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::world::{HEIGHT, PLAYER_SIZE, WIDTH, WORLD_TILE_SIZE};
 const MOVE_SPEED: f32 = 140.0;
+const LOW_STAMINA_SPEED_FACTOR: f32 = 1.0 / 3.0;
 const ATLAS_COLUMNS: u32 = 8;
 
 #[derive(Component)]
@@ -113,9 +114,18 @@ fn energy_system(
 fn move_player(
     input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    mut query: Query<(&mut Transform, &mut PlayerState, &mut Sprite, &mut MovementTracker), With<Player>>,
+    mut query: Query<
+        (
+            &mut Transform,
+            &mut PlayerState,
+            &mut Sprite,
+            &mut MovementTracker,
+            &Stats,
+        ),
+        With<Player>,
+    >,
 ) {
-    let Ok((mut transform, mut state,  mut sprite, mut tracker,)) = query.single_mut() else {
+    let Ok((mut transform, mut state, mut sprite, mut tracker, stats)) = query.single_mut() else {
         return;
     };
 
@@ -136,7 +146,12 @@ fn move_player(
     if direction != Vec2::ZERO {
         tracker.is_moving = true;
         tracker.seconds += time.delta_secs();
-        let delta = direction.normalize() * MOVE_SPEED * time.delta_secs();
+        let speed = if stats.stamina <= 0.0 {
+            MOVE_SPEED * LOW_STAMINA_SPEED_FACTOR
+        } else {
+            MOVE_SPEED
+        };
+        let delta = direction.normalize() * speed * time.delta_secs();
         transform.translation.x += delta.x;
         transform.translation.y += delta.y;
 
