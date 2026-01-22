@@ -23,6 +23,7 @@ pub enum Facing {
 pub struct Stats {
     pub health: f32,
     pub stamina: f32,
+    pub food_bar: f32,
 }
 
 #[derive(Component)]
@@ -67,7 +68,7 @@ fn spawn_player(
         Transform::from_translation(Vec3::new(center_x, center_y, 0.0)),
         Player,
         PlayerState { facing },
-        Stats { health: 100.0, stamina: 100.0},
+        Stats { health: 100.0, stamina: 100.0, food_bar: 100.0},
         MovementTracker { seconds: 0.0, is_moving: false},
     ));
 }
@@ -83,7 +84,16 @@ fn energy_system(
     let stamina_drain_per_sec = 8.0;
     let stamina_regen_per_sec = 6.0;
     let health_drain_per_sec = 3.0;
+    let food_bar_drain_per_sec = 2.0;
+    let food_bar_empty_drain_per_sec = 4.0;
+    let food_bar_empty_health_drain_per_sec = 10.0;
     let dt = time.delta_secs();
+
+    stats.food_bar = (stats.food_bar - food_bar_drain_per_sec * dt).max(0.0);
+
+    if stats.food_bar <= 0.0{
+        stats.health = (stats.health - food_bar_empty_health_drain_per_sec * dt).max(0.0)
+    }
 
     if tracker.is_moving {
         stats.stamina = (stats.stamina - stamina_drain_per_sec * dt).max(0.0);
@@ -91,9 +101,11 @@ fn energy_system(
             stats.health = (stats.health - health_drain_per_sec * dt).max(0.0);
         }
     }
+    let allow_regen = stats.stamina < 100.0 && stats.food_bar > 0.0;
     if !tracker.is_moving{
-        if stats.stamina < 100.0{
-            stats.stamina = (stats.stamina + stamina_regen_per_sec * dt).min(100.0)
+        if allow_regen {
+            stats.stamina = (stats.stamina + stamina_regen_per_sec * dt).min(100.0);
+            stats.food_bar = (stats.food_bar - food_bar_empty_drain_per_sec * dt).max(0.0);
         }
     }
 }
