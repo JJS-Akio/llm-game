@@ -19,6 +19,18 @@ pub enum Facing {
     DownLeft,
 }
 
+#[derive(Component)]
+pub struct Stats {
+    pub health: f32,
+    pub stamina: f32,
+}
+
+#[derive(Component)]
+pub struct MovementTracker {
+    seconds: f32,
+    is_moving: bool,
+}
+
 #[derive(Component, Debug, Clone, Copy)]
 pub struct PlayerState {
     pub facing: Facing,
@@ -55,15 +67,43 @@ fn spawn_player(
         Transform::from_translation(Vec3::new(center_x, center_y, 0.0)),
         Player,
         PlayerState { facing },
+        Stats { health: 100.0, stamina: 100.0},
+        MovementTracker { seconds: 0.0, is_moving: false},
     ));
+}
+
+fn energy_system(
+    time: Res<Time>,
+    mut query: Query<(&MovementTracker, &mut Stats)> 
+){
+    let Ok((tracker, mut stats)) = query.single_mut() else {
+        return;
+    };
+
+    let stamina_drain_per_sec = 8.0;
+    let stamina_regen_per_sec = 6.0;
+    let health_drain_per_sec = 3.0;
+    let dt = time.delta_secs();
+
+    if tracker.is_moving {
+        stats.stamina = (stats.stamina - stamina_drain_per_sec * dt).max(0.0);
+        if stats.stamina <= 0.0{
+            stats.health = (stats.health - health_drain_per_sec * dt).max(0.0);
+        }
+    }
+    if !tracker.is_moving{
+        if stats.stamina < 100.0{
+            stats.stamina = (stats.stamina + stamina_regen_per_sec * dt).min(100.0)
+        }
+    }
 }
 
 fn move_player(
     input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    mut query: Query<(&mut Transform, &mut PlayerState, &mut Sprite), With<Player>>,
+    mut query: Query<(&mut Transform, &mut PlayerState, &mut Sprite, &mut MovementTracker), With<Player>>,
 ) {
-    let Ok((mut transform, mut state, mut sprite)) = query.single_mut() else {
+    let Ok((mut transform, mut state,  mut sprite, mut tracker,)) = query.single_mut() else {
         return;
     };
 
@@ -82,6 +122,8 @@ fn move_player(
     }
 
     if direction != Vec2::ZERO {
+        tracker.is_moving = true;
+        tracker.seconds += time.delta_secs();
         let delta = direction.normalize() * MOVE_SPEED * time.delta_secs();
         transform.translation.x += delta.x;
         transform.translation.y += delta.y;
@@ -105,6 +147,11 @@ fn move_player(
         } else {
             state.facing = if direction.y > 0.0 { Facing::Up } else { Facing::Down };
         }
+    }
+    let rest_rate: f32 = 1.0;
+    if direction == Vec2::ZERO {
+        tracker.is_moving = false;
+        tracker.seconds = f32::max(0.0, tracker.seconds - rest_rate * time.delta_secs());
     }
 
     if let Some(atlas) = sprite.texture_atlas.as_mut() {
@@ -138,6 +185,6 @@ pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_player)
-            .add_systems(Update, move_player);
+            .add_systems(Update, (move_player, (energy_system)).chain());
     }
 }
