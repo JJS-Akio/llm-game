@@ -11,6 +11,8 @@ pub const WIDTH: usize = 1000;
 pub const WORLD_TILE_SIZE: f32 = 1.0;
 pub const PLAYER_SIZE: f32 = 24.0;
 const CHUNK_SIZE: usize = 25;
+const WALL_THICKNESS: usize = 6;
+const USE_WALL_TEXTURE: bool = false;
 
 pub type Field = Vec<Vec<bool>>;
 
@@ -41,7 +43,10 @@ fn walls_field() -> Vec<Vec<bool>> {
     let mut walls = vec![vec![false; WIDTH]; HEIGHT];
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
-            let is_wall = x == 0 || y == 0 || x == WIDTH - 1 || y == HEIGHT - 1;
+            let is_wall = x < WALL_THICKNESS
+                || y < WALL_THICKNESS
+                || x >= WIDTH - WALL_THICKNESS
+                || y >= HEIGHT - WALL_THICKNESS;
             walls[y][x] = is_wall;
         }
     }
@@ -87,6 +92,7 @@ pub fn set_chunk_tile_color(
 
 fn spawn_chunks(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     grid: Res<WorldGrid>,
@@ -99,7 +105,17 @@ fn spawn_chunks(
     chunks.meshes.clear();
     chunks.meshes.reserve(cols * rows);
 
-    let material = materials.add(ColorMaterial::from(Color::WHITE));
+    let floor_material = materials.add(ColorMaterial::from(Color::WHITE));
+    let wall_material = if USE_WALL_TEXTURE {
+        let wall_texture: Handle<Image> = asset_server.load("wall.png");
+        materials.add(ColorMaterial {
+            color: Color::WHITE,
+            texture: Some(wall_texture),
+            ..Default::default()
+        })
+    } else {
+        materials.add(ColorMaterial::from(Color::srgb(0.6, 0.6, 0.6)))
+    };
 
     for chunk_y in 0..rows {
         for chunk_x in 0..cols {
@@ -114,6 +130,10 @@ fn spawn_chunks(
             let mut uvs = Vec::with_capacity(chunk_w * chunk_h * 4);
             let mut colors = Vec::with_capacity(chunk_w * chunk_h * 4);
             let mut indices = Vec::with_capacity(chunk_w * chunk_h * 6);
+            let mut wall_positions = Vec::with_capacity(chunk_w * chunk_h * 4);
+            let mut wall_uvs = Vec::with_capacity(chunk_w * chunk_h * 4);
+            let mut wall_colors = Vec::with_capacity(chunk_w * chunk_h * 4);
+            let mut wall_indices = Vec::with_capacity(chunk_w * chunk_h * 6);
 
             for local_y in 0..chunk_h {
                 for local_x in 0..chunk_w {
@@ -133,11 +153,8 @@ fn spawn_chunks(
                     ]);
                     uvs.extend_from_slice(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
 
-                    let color = if is_wall_tile(&grid, world_x, world_y) {
-                        Color::srgb(0.6, 0.6, 0.6).to_linear()
-                    } else {
-                        Color::BLACK.to_linear()
-                    };
+                    let is_wall = is_wall_tile(&grid, world_x, world_y);
+                    let color = Color::BLACK.to_linear();
                     let color = [color.red, color.green, color.blue, color.alpha];
                     colors.extend_from_slice(&[color; 4]);
 
@@ -149,6 +166,64 @@ fn spawn_chunks(
                         base + 3,
                         base + 2,
                     ]);
+
+                    if is_wall {
+                        let dist_left = world_x;
+                        let dist_right = WIDTH - 1 - world_x;
+                        let dist_bottom = world_y;
+                        let dist_top = HEIGHT - 1 - world_y;
+                        let mut edge = 0;
+                        let mut dist = dist_left;
+                        if dist_right < dist {
+                            dist = dist_right;
+                            edge = 1;
+                        }
+                        if dist_bottom < dist {
+                            dist = dist_bottom;
+                            edge = 2;
+                        }
+                        if dist_top < dist {
+                            dist = dist_top;
+                            edge = 3;
+                        }
+                        let thickness = WALL_THICKNESS as f32;
+                        let t0 = dist as f32 / thickness;
+                        let t1 = (dist as f32 + 1.0) / thickness;
+                        let (u0, u1, v0, v1) = if edge <= 1 {
+                            (t0, t1, 0.0, 1.0)
+                        } else {
+                            (0.0, 1.0, t0, t1)
+                        };
+                        let wall_base = wall_positions.len() as u32;
+                        wall_positions.extend_from_slice(&[
+                            [x0, y0, 0.0],
+                            [x1, y0, 0.0],
+                            [x1, y1, 0.0],
+                            [x0, y1, 0.0],
+                        ]);
+                        wall_uvs.extend_from_slice(&[
+                            [u0, v0],
+                            [u1, v0],
+                            [u1, v1],
+                            [u0, v1],
+                        ]);
+                        let wall_color = Color::WHITE.to_linear();
+                        let wall_color = [
+                            wall_color.red,
+                            wall_color.green,
+                            wall_color.blue,
+                            wall_color.alpha,
+                        ];
+                        wall_colors.extend_from_slice(&[wall_color; 4]);
+                        wall_indices.extend_from_slice(&[
+                            wall_base,
+                            wall_base + 2,
+                            wall_base + 1,
+                            wall_base,
+                            wall_base + 3,
+                            wall_base + 2,
+                        ]);
+                    }
                 }
             }
 
@@ -168,9 +243,28 @@ fn spawn_chunks(
             );
             commands.spawn((
                 Mesh2d(handle),
-                MeshMaterial2d(material.clone()),
+                MeshMaterial2d(floor_material.clone()),
                 Transform::from_translation(chunk_origin),
             ));
+
+            if !wall_positions.is_empty() {
+                let mut wall_mesh =
+                    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+                wall_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, wall_positions);
+                wall_mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, wall_uvs);
+                wall_mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, wall_colors);
+                wall_mesh.insert_indices(Indices::U32(wall_indices));
+                let wall_handle = meshes.add(wall_mesh);
+                commands.spawn((
+                    Mesh2d(wall_handle),
+                    MeshMaterial2d(wall_material.clone()),
+                    Transform::from_translation(Vec3::new(
+                        chunk_origin.x,
+                        chunk_origin.y,
+                        -0.5,
+                    )),
+                ));
+            }
         }
     }
 }

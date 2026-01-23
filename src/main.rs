@@ -2,10 +2,12 @@
 mod player;
 mod light;
 mod world;
+mod food;
 
 use bevy::prelude::*;
 use crate::player::{Player, PlayerPlugin};
 use crate::light::LightPlugin;
+use crate::food:: FoodPlugin;
 use crate::world::{WorldPlugin, HEIGHT, WORLD_TILE_SIZE, WIDTH};
 
 fn main() {
@@ -16,6 +18,7 @@ fn main() {
     .add_plugins(PlayerPlugin)
     .add_plugins(WorldPlugin)
     .add_plugins(LightPlugin)
+    .add_plugins(FoodPlugin)
 	.run();
 }
 

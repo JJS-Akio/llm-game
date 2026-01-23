@@ -1,9 +1,11 @@
 use bevy::prelude::*;
 
+use crate::food::FoodTracker;
 use crate::world::{HEIGHT, PLAYER_SIZE, WIDTH, WORLD_TILE_SIZE};
 const MOVE_SPEED: f32 = 140.0;
 const LOW_STAMINA_SPEED_FACTOR: f32 = 1.0 / 3.0;
 const ATLAS_COLUMNS: u32 = 8;
+const FOOD_COLLISION_RADIUS: f32 = 12.0;
 
 #[derive(Component)]
 pub struct Player;
@@ -43,7 +45,7 @@ fn spawn_player(
     asset_server: Res<AssetServer>,
     mut atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
-    let texture: Handle<Image> = asset_server.load("player.ppm");
+    let texture: Handle<Image> = asset_server.load("player.png");
     let layout = TextureAtlasLayout::from_grid(
         UVec2::new(PLAYER_SIZE as u32, PLAYER_SIZE as u32),
         ATLAS_COLUMNS,
@@ -82,7 +84,7 @@ fn energy_system(
         return;
     };
 
-    let stamina_drain_per_sec = 8.0;
+    let stamina_drain_per_sec = 4.0;
     let stamina_regen_per_sec = 6.0;
     let health_drain_per_sec = 3.0;
     let food_bar_drain_per_sec = 2.0;
@@ -114,6 +116,7 @@ fn energy_system(
 fn move_player(
     input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    food_tracker: Res<FoodTracker>,
     mut query: Query<
         (
             &mut Transform,
@@ -143,17 +146,32 @@ fn move_player(
         direction.y -= 1.0;
     }
 
+    let dt = time.delta_secs();
+    let mut did_move = false;
     if direction != Vec2::ZERO {
-        tracker.is_moving = true;
-        tracker.seconds += time.delta_secs();
         let speed = if stats.stamina <= 0.0 {
             MOVE_SPEED * LOW_STAMINA_SPEED_FACTOR
         } else {
             MOVE_SPEED
         };
-        let delta = direction.normalize() * speed * time.delta_secs();
-        transform.translation.x += delta.x;
-        transform.translation.y += delta.y;
+        let delta = direction.normalize() * speed * dt;
+        let proposed_x = transform.translation.x + delta.x;
+        let proposed_y = transform.translation.y + delta.y;
+        let collision_radius_sq = FOOD_COLLISION_RADIUS * FOOD_COLLISION_RADIUS;
+        let blocked = food_tracker.iter_locations().any(|location| {
+            let food_x = location.x as f32 * WORLD_TILE_SIZE;
+            let food_y = location.y as f32 * WORLD_TILE_SIZE;
+            let dx = proposed_x - food_x;
+            let dy = proposed_y - food_y;
+            (dx * dx + dy * dy) <= collision_radius_sq
+        });
+        if !blocked {
+            transform.translation.x = proposed_x;
+            transform.translation.y = proposed_y;
+            did_move = true;
+        } else {
+            tracker.is_moving = false;
+        }
 
         if direction.x != 0.0 && direction.y != 0.0 {
             state.facing = if direction.x > 0.0 && direction.y > 0.0 {
@@ -176,9 +194,12 @@ fn move_player(
         }
     }
     let rest_rate: f32 = 1.0;
-    if direction == Vec2::ZERO {
+    if did_move {
+        tracker.is_moving = true;
+        tracker.seconds += dt;
+    } else {
         tracker.is_moving = false;
-        tracker.seconds = f32::max(0.0, tracker.seconds - rest_rate * time.delta_secs());
+        tracker.seconds = f32::max(0.0, tracker.seconds - rest_rate * dt);
     }
 
     if let Some(atlas) = sprite.texture_atlas.as_mut() {
