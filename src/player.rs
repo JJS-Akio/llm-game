@@ -55,8 +55,8 @@ struct StatusIconHandles {
 }
 
 #[derive(Resource)]
-struct DeathRespawnState {
-    is_dead: bool,
+pub struct DeathRespawnState {
+    pub is_dead: bool,
 }
 
 impl DeathRespawnState {

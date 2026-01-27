@@ -3,8 +3,8 @@ use std::time::Duration;
 use std::collections::HashSet;
 use rand::Rng;
 use crate::{
-    player::{FOOD_BAR_MAX, Player, Stats},
-    world::{HEIGHT, WIDTH, WORLD_TILE_SIZE},
+    player::{DeathRespawnState, FOOD_BAR_MAX, Player, Stats},
+    world::{WorldGrid, HEIGHT, WIDTH, WORLD_TILE_SIZE},
 };
 
 const X_SPAWN_GENERATION: i32 = HEIGHT as i32 - 32;
@@ -12,6 +12,9 @@ const Y_SPAWN_GENERATION: i32 = WIDTH as i32 - 32;
 
 const MAX_SPAWN_ATTEMPTS: i32 = 10;
 const FOOD_PICKUP_RADIUS_TILES: i32 = 32;
+const LIGHT_MAX_BRIGHTNESS: f32 = 0.93;
+const MIN_LIGHT_THRESHOLD: f32 = 0.01;
+const MIN_DARKNESS_FACTOR: f32 = 0.12;
 
 
 #[derive(Component)]
@@ -55,10 +58,14 @@ fn spawn_food(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     time: Res<Time>,
+    death_state: Res<DeathRespawnState>,
     mut config: ResMut<FoodSpawnConfig>,
     mut food_stats: ResMut<FoodTracker>,
     player_query: Query<&Transform, With<Player>>,
 ) {
+    if death_state.is_dead {
+        return;
+    }
 
     let texture: Handle<Image> = asset_server.load("apple.png");
 
@@ -87,6 +94,7 @@ fn spawn_food(
                     custom_size: Some(Vec2::new(16.0, 16.0)),
                     ..Sprite::from_image(texture)
                 },
+                Visibility::Hidden,
                 Transform::from_translation(Vec3::new(world_x, world_y, 1.0)),
                 FoodStats { food_bar_regen: 20.0 },
             ));
@@ -131,10 +139,14 @@ fn food_generate_location(
 fn food_pickup(
     mut commands: Commands,
     input: Res<ButtonInput<KeyCode>>,
+    death_state: Res<DeathRespawnState>,
     mut food_stats: ResMut<FoodTracker>,
     mut player_query: Query<(&Transform, &mut Stats), With<Player>>,
-    food_query: Query<(Entity, &FoodStats, &Location2D), With<Food>>,
+    food_query: Query<(Entity, &FoodStats, &Location2D, &Visibility), With<Food>>,
 ) {
+    if death_state.is_dead {
+        return;
+    }
     if !input.just_pressed(KeyCode::KeyE) {
         return;
     }
@@ -147,7 +159,10 @@ fn food_pickup(
         (player_transform.translation.y / WORLD_TILE_SIZE).floor() as i32;
 
     let max_dist_sq = FOOD_PICKUP_RADIUS_TILES * FOOD_PICKUP_RADIUS_TILES;
-    for (entity, food, location) in &food_query {
+    for (entity, food, location, visibility) in &food_query {
+        if !matches!(*visibility, Visibility::Visible) {
+            continue;
+        }
         let dx = location.x - player_tile_x;
         let dy = location.y - player_tile_y;
         let dist_sq = dx * dx + dy * dy;
@@ -158,6 +173,40 @@ fn food_pickup(
             food_stats.food_spawn_location.remove(location);
             commands.entity(entity).despawn();
         }
+    }
+}
+
+fn update_food_lighting(
+    grid: Res<WorldGrid>,
+    mut food_query: Query<(&Location2D, &mut Visibility, &mut Sprite), With<Food>>,
+) {
+    for (location, mut visibility, mut sprite) in &mut food_query {
+        let x = location.x as usize;
+        let y = location.y as usize;
+        let in_bounds = x < WIDTH && y < HEIGHT;
+        if !in_bounds {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
+        let brightness = grid.brightness[y][x];
+        let normalized = if LIGHT_MAX_BRIGHTNESS > 0.0 {
+            (brightness / LIGHT_MAX_BRIGHTNESS).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+
+        if brightness <= MIN_LIGHT_THRESHOLD {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
+        *visibility = Visibility::Visible;
+
+        // Keep fruit visible but dark when near the edge of the light.
+        let darkness_factor =
+            MIN_DARKNESS_FACTOR + (1.0 - MIN_DARKNESS_FACTOR) * normalized;
+        sprite.color = Color::srgb(darkness_factor, darkness_factor, darkness_factor);
     }
 }
 
@@ -178,6 +227,7 @@ pub struct FoodPlugin;
 impl Plugin for FoodPlugin {
     fn build(&self, app: &mut App){
         app.add_systems(Startup, setup_food_spawning)
-            .add_systems(Update, (spawn_food, food_pickup));
+            .add_systems(Update, (spawn_food, food_pickup))
+            .add_systems(PostUpdate, update_food_lighting);
     }
 }
