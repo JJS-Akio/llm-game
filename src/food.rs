@@ -3,7 +3,7 @@ use std::time::Duration;
 use std::collections::HashSet;
 use rand::Rng;
 use crate::{
-    player::{Player, Stats},
+    player::{FOOD_BAR_MAX, Player, Stats},
     world::{HEIGHT, WIDTH, WORLD_TILE_SIZE},
 };
 
@@ -11,9 +11,6 @@ const X_SPAWN_GENERATION: i32 = HEIGHT as i32 - 32;
 const Y_SPAWN_GENERATION: i32 = WIDTH as i32 - 32;
 
 const MAX_SPAWN_ATTEMPTS: i32 = 10;
-const FOOD_BAR_MAX: f32 = 100.0;
-const BAR_WIDTH: f32 = 200.0;
-const BAR_HEIGHT: f32 = 14.0;
 const FOOD_PICKUP_RADIUS_TILES: i32 = 32;
 
 
@@ -40,6 +37,11 @@ pub struct FoodTracker {
 impl FoodTracker {
     pub fn iter_locations(&self) -> impl Iterator<Item = &Location2D> {
         self.food_spawn_location.iter()
+    }
+
+    pub fn clear(&mut self) {
+        self.food_spawn_location.clear();
+        self.food_amount = 0;
     }
 }
 
@@ -86,7 +88,7 @@ fn spawn_food(
                     ..Sprite::from_image(texture)
                 },
                 Transform::from_translation(Vec3::new(world_x, world_y, 1.0)),
-                FoodStats { food_bar_regen: 10.0 },
+                FoodStats { food_bar_regen: 20.0 },
             ));
             food_stats.food_amount += 1;
         }
@@ -103,104 +105,6 @@ fn setup_food_spawning(
         food_spawn_location: HashSet::new(),
         food_amount: 0,
     });
-}
-
-fn setup_food_ui(
-    mut commands: Commands,
-) {
-    commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            left: px(16.0),
-            top: px(16.0),
-            width: px(BAR_WIDTH),
-            height: px(BAR_HEIGHT),
-            border: UiRect::all(px(2.0)),
-            ..default()
-        },
-        BackgroundColor(Color::srgb(0.08, 0.08, 0.08)),
-        BorderColor::all(Color::srgb(0.45, 0.45, 0.45)),
-        children![(
-            Node {
-                width: percent(100.0),
-                height: percent(100.0),
-                ..default()
-            },
-            BackgroundColor(Color::srgb(0.25, 0.9, 0.25)),
-            FoodBarFill,
-        )],
-    ));
-
-    commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            left: px(16.0),
-            top: px(36.0),
-            width: px(BAR_WIDTH),
-            height: px(BAR_HEIGHT),
-            border: UiRect::all(px(2.0)),
-            ..default()
-        },
-        BackgroundColor(Color::srgb(0.08, 0.08, 0.08)),
-        BorderColor::all(Color::srgb(0.45, 0.45, 0.45)),
-        children![(
-            Node {
-                width: percent(100.0),
-                height: percent(100.0),
-                ..default()
-            },
-            BackgroundColor(Color::srgb(0.9, 0.2, 0.2)),
-            HealthBarFill,
-        )],
-    ));
-
-    commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            left: px(16.0),
-            top: px(56.0),
-            width: px(BAR_WIDTH),
-            height: px(BAR_HEIGHT),
-            border: UiRect::all(px(2.0)),
-            ..default()
-        },
-        BackgroundColor(Color::srgb(0.08, 0.08, 0.08)),
-        BorderColor::all(Color::srgb(0.45, 0.45, 0.45)),
-        children![(
-            Node {
-                width: percent(100.0),
-                height: percent(100.0),
-                ..default()
-            },
-            BackgroundColor(Color::srgb(0.2, 0.6, 0.95)),
-            StaminaBarFill,
-        )],
-    ));
-}
-
-fn update_food_ui(
-    player_query: Query<&Stats, With<Player>>,
-    mut bar_queries: ParamSet<(
-        Query<&mut Node, With<FoodBarFill>>,
-        Query<&mut Node, With<HealthBarFill>>,
-        Query<&mut Node, With<StaminaBarFill>>,
-    )>,
-) {
-    let Ok(stats) = player_query.single() else {
-        return;
-    };
-    if let Ok(mut node) = bar_queries.p0().single_mut() {
-        let pct = (stats.food_bar / FOOD_BAR_MAX).clamp(0.0, 1.0) * 100.0;
-        node.width = percent(pct);
-    }
-    if let Ok(mut node) = bar_queries.p1().single_mut() {
-        let pct = (stats.health / 100.0).clamp(0.0, 1.0) * 100.0;
-        node.width = percent(pct);
-    }
-    if let Ok(mut node) = bar_queries.p2().single_mut() {
-        let pct = (stats.stamina / 100.0).clamp(0.0, 1.0) * 100.0;
-        node.width = percent(pct);
-    }
 }
 
 fn food_generate_location(
@@ -273,16 +177,7 @@ pub struct FoodPlugin;
 
 impl Plugin for FoodPlugin {
     fn build(&self, app: &mut App){
-        app.add_systems(Startup, (setup_food_spawning, setup_food_ui))
-            .add_systems(Update, (spawn_food, food_pickup, update_food_ui));
+        app.add_systems(Startup, setup_food_spawning)
+            .add_systems(Update, (spawn_food, food_pickup));
     }
 }
-
-#[derive(Component)]
-struct FoodBarFill;
-
-#[derive(Component)]
-struct HealthBarFill;
-
-#[derive(Component)]
-struct StaminaBarFill;
