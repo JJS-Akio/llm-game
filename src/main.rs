@@ -11,6 +11,7 @@ use crate::food:: FoodPlugin;
 use crate::world::{WorldPlugin, HEIGHT, WORLD_TILE_SIZE, WIDTH};
 
 fn main() {
+	let _ = dotenvy::dotenv();
 	App::new()
 	.add_plugins(DefaultPlugins)
 	.add_systems(Startup, setup)

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
-use std::time::Duration;
+use std::{env, time::Duration};
 use std::collections::HashSet;
-use rand::Rng;
+use rand::{Rng, SeedableRng, rngs::StdRng};
 use crate::{
     player::{DeathRespawnState, FOOD_BAR_MAX, Player, Stats},
     world::{WorldGrid, HEIGHT, WIDTH, WORLD_TILE_SIZE},
@@ -37,6 +37,16 @@ pub struct FoodTracker {
     pub food_amount: i32,
 }
 
+#[derive(Resource)]
+pub struct FoodSpawnConfig {
+    pub timer: Timer,
+}
+
+#[derive(Resource)]
+pub struct RandomSelectionConfig {
+    pub rng: StdRng,
+}
+
 impl FoodTracker {
     pub fn iter_locations(&self) -> impl Iterator<Item = &Location2D> {
         self.food_spawn_location.iter()
@@ -48,11 +58,6 @@ impl FoodTracker {
     }
 }
 
-#[derive(Resource)]
-pub struct FoodSpawnConfig {
-    pub timer: Timer,
-}
-
 
 fn spawn_food(
     mut commands: Commands,
@@ -62,6 +67,7 @@ fn spawn_food(
     mut config: ResMut<FoodSpawnConfig>,
     mut food_stats: ResMut<FoodTracker>,
     player_query: Query<&Transform, With<Player>>,
+    mut rng: ResMut<RandomSelectionConfig>,
 ) {
     if death_state.is_dead {
         return;
@@ -82,7 +88,7 @@ fn spawn_food(
         let player_tile_y =
             (player_transform.translation.y / WORLD_TILE_SIZE).floor() as i32;
         if let Some(location) =
-            food_generate_location(food_stats.as_mut(), player_tile_x, player_tile_y)
+            food_generate_location(food_stats.as_mut(), player_tile_x, player_tile_y, &mut rng.rng)
         {
             let Location2D { x, y } = location;
             let world_x = x as f32 * WORLD_TILE_SIZE;
@@ -113,14 +119,27 @@ fn setup_food_spawning(
         food_spawn_location: HashSet::new(),
         food_amount: 0,
     });
+
+    let seed_key = "SPAWN_SEED_KEY";
+    let seed_value: Option<u64> = env::var(seed_key)
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok());
+
+    let rng = match seed_value {
+        Some(seed) => StdRng::seed_from_u64(seed),
+        None => StdRng::from_os_rng(),
+    };
+    commands.insert_resource(RandomSelectionConfig {
+        rng
+    });
 }
 
 fn food_generate_location(
     food_stats: &mut FoodTracker,
     player_x: i32,
     player_y: i32,
+    rng: &mut StdRng,
 ) -> Option<Location2D> {
-    let mut rng = rand::rng();
 
     for _ in 0..MAX_SPAWN_ATTEMPTS {
         let x: i32 = rng.random_range(1..X_SPAWN_GENERATION);
